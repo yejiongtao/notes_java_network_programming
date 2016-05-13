@@ -1,0 +1,156 @@
+1. basic network concept
+	advantages of breaking data into packets
+		packets from many ongoing exchanges can travel on one wire
+			in contrast, wire telephones need a whole wire when communicating
+		checksums can be used to detect whether a packet was damaged in transit
+	standart TCP/IP four-layer model
+		application layer	
+			Java's network classes mostly work on this layer, and sometimes on the trasnport layer
+			The only protocols Java supports are TCP and UDP, and application layer protocols built on top of these. 
+			All other transport layer, internet layer, and lower layer protocols such as ICMP, IGMP, ARP, RARP, RSVP, and others can only be implemented in Java programs by linking to native code
+		transport layer (TCP, UDP)
+			responsible for ensuring that packets are received in the order they were sent and that no data is lost or corrupted
+			TCP ensures askes for retransmission of missing data, but it carries a fair amount of overhead
+			in some cases, for example video or audio signal, losing some bits won't matter, then UDP should be use
+		internet layer (IP)
+			defines how bits and bytes of data are organized into the larger groups called packets
+			defines the addressing scheme by which different machines find one another
+			enables different types of Host-to-Network layers to talk to each other
+		physical layer		
+			the only one thing you have to think about on this layer is performance. 
+			based on different connections clients on, design the app differently
+	something else
+		local IP address may change even when your app is running, so check it every time you use it
+		IPv4 address that uses the same number for each of the four bytes (i.e., 255.255.255.255), is a broadcast address
+			packets sent to this address are received by all nodes on the local network
+		Port numbers between 1 and 1023 are reserved for well-known services like finger, FTP, HTTP, and IMAP.
+			On Unix systems, including Linux and Mac OS X, only programs running as root can receive data from these ports, but all programs may send data to them. 
+			On Windows, any program may use these ports without special privileges.
+		NAT  --network address translation
+			to translates the local address into global ip address and vise versa
+			will be obsolete due to IPv6
+		Internet adress block
+			When a company or an organization wants to set up an IP-based network connected to the Internet, their ISP assigns them a block of addresses
+			the lowest address in a block is used to identify the network itself
+			the largest address in a block is a broadcast address for the network
+		proxy server
+			a machine that is prevented from connecting to the external network by a firewall would make a request for a web page from the local proxy server
+				The proxy server would then request the page from the web server and forward the response back to the original requester
+				in this way, the external hosts will only find out things about the proxy, instead of the local machines
+			compared to firewall, proxy server knows more about the application layer, such as HTTP and FTP, so it can do more specific things
+			proxy servers can also be used to implement local caching
+			The biggest problem with proxy servers is their inability to cope with all but a few protocols
+				some new protocols cannot pass through
+		client/server mode
+			a client initiates a conversation while a server waits for clients to start conversations with it 
+		peer-to-peer communication
+			in contrast to client/server mode
+			Java does not have explicit peer-to-peer communication in its core networking API
+			but can implement in these ways:
+				acting as both a server and a client
+				or, the peers can communicate with each other through an intermediate server program that forwards data from one peer to the other peers
+					This neatly solves the discovery problem of how two peers find each other.
+
+2. streams in Java
+	different streams deal with different data, but they have the same basic methods to use
+		so you can often ignore the details of exactly what it is
+	filter streams can be chained to either an input stream or an output stream
+		can modify the data as it's read or written
+	readers and writers can be chained to input and output streams to allow reading and writing text
+	streams are synchronous
+		that is, when a thread asks a stream to read or write data, it waits for the data to be read or written before it does anything else
+		Java also offers nonblocking I/O using channels and buffers
+			can be much faster in some high-volume applications, such as web servers
+
+3. OutputStream
+	common methods
+		write(int b)
+			will cast the int to a unsigned byte, so 0-255 is the range
+		write(byte[] data)
+		write(byte[] data, int offset, int length)
+		flush()
+			by chaining a BufferedOutputStream or a BufferedWriter, buffer is used
+				if so, flush() is important because the buffered stream will not send out data until it's full
+			sometimes you don't know if the stream is buffered (i.e., System.out is buffered)
+				so it's a good habit to always flush()
+			and you should flush() before close()
+		close()
+			Failure to close a stream in a long-running program can leak file handles, network ports, and other resources
+	subclasses:
+		FileOutputStream	writes data into a file
+		TelnetOutputStream	writes data onto a network connection
+		ByteArrayOutputStream	writes data into an expandable byte array
+	dispose pattern  --common for any object that needs to be cleaned up
+		in Java 6 and earlier
+			OutputStream out = null;
+			try {
+			  out = new FileOutputStream("/tmp/data.txt");
+			  // work with the output stream...
+			} catch (IOException ex) {
+			  System.err.println(ex.getMessage());
+			} finally {
+			  if (out != null) {
+			    try {
+			      out.close();
+			    } catch (IOException ex) {
+			      // ignore
+			    }
+			  }
+			}
+		in Java 7, try with resources is introduced
+			try (OutputStream out = new FileOutputStream("/tmp/data.txt")) {
+			  // work with the output stream...
+			} catch (IOException ex) {
+			  System.err.println(ex.getMessage());
+			}
+			//The finally clause is no longer needed. 
+			Java automatically invokes close() on any AutoCloseable objects declared inside the argument list of the try block
+				including almost every object you need to dipose
+	input and output can be slow
+		so consider put them in its own thread
+
+4. InputStream
+	common methods
+		int read()
+			reads a single byte of data
+			returning -1 signaifies end of stream
+			waits and blocks execution of any code follows it until a byte is available
+		int read(byte[] input)
+			returns the number of bytes that is actually read
+		int read(byte[] input, int offset, int length)
+		long skip(long n)
+			to skip data without reading it
+			less useful on network connections
+				because Network connections are sequential and normally quite slow, so it’s not significantly more time consuming to read data than to skip over it
+			Files are random access so that skipping can be implemented simply by repositioning a file pointer rather than processing each byte to be skipped
+		int available()
+		close()
+	other methods (seldom used)
+		mark(int readAheadLimit)
+		reset()
+			reset to the marked position
+		boolean markSupported()
+			not all the subclass supports it
+	subclass
+		FileInputStream
+		TelnetInputStream
+		ByteArrayInputStream
+	measures should be taken
+		the read() method cannot guarantee all the bytes will be read, especially for network streams
+		to read all the bytes available in a guaranteed way
+			int bytesRead = 0;
+			int bytesToRead = 1024;
+			byte[] input = new byte[bytesToRead];
+			while (bytesRead < bytesToRead) {
+			  int result = in.read(input, bytesRead, bytesToRead - bytesRead);
+			  if (result == -1) break; // end of stream
+			  bytesRead += result;
+			}
+		If you do not want to wait until all the bytes you need are immediately available, you can use the available() method to determine how many bytes can be read without blocking
+			int bytesAvailable = in.available();	// can be zero
+			byte[] input = new byte[bytesAvailable];
+			int bytesRead = in.read(input, 0, bytesAvailable);	// if the length is zero, then return zero, instead of -1
+			// continue with rest of program immediately...
+			// In this case, you can expect that bytesRead is exactly equal to bytesAvailable.
+
+

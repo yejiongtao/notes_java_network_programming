@@ -1,0 +1,22 @@
+1. SecurityManager
+	defines a security policy for an app
+		actions not allowed by the security policy cause a SecurityException
+	create
+		SecurityManager appsm = System.getSecurityManager();
+		if(appsm == null){
+			appsm = new SecurityManager();
+			System.setSecurityManager(appsm);
+		}
+	discover which actions are allowed
+		System.exit invokes SecurityManager.checkExit to ensure that the current thread has permission to shut down the application
+		SecurityManager.checkAccess verifies thread accesses
+		SecurityManager.checkPropertyAccess verifies access to the specified property
+	set policy
+		in file java.policy
+			grant {
+			  permission java.lang.RuntimePermission "setSecurityManager";
+			  permission java.lang.RuntimePermission "createSecurityManager";
+			  permission java.lang.RuntimePermission "usePolicy";
+			};
+		in the app
+			System.setProperty("java.security.policy", "file:/C:/java.policy");

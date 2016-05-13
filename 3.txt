@@ -1,0 +1,138 @@
+1. synchronization
+	if applied to non-static methods
+		this very object will be locked, ANY synchronized non-static method of it cannot be accessed
+	if applied to static methods
+		this class is locked, ANY static method of it cannot be accessed
+	synchronized( objectA ) { //codeA }
+		objectA is just a mark, any object can be it
+		all the synchronized block on objectA will run in series
+		other block synchronized on other object will run in parellel, even they also run the same codeA
+		you can do this
+			Integer i = 1;
+			synchronized(i){}
+			synchronized(i){}	synchronization also works
+		ususally, we synchronized on the resource the threads share, which make sense
+			figure out what you are protecting, it's the object or some resource
+	in order to prevent deadlock, 
+		unnecessary synchronization should be avoided
+			use local variables instead of fields to avoid incosistency caused by multithreading, if possible
+				Every time a method is entered, the virtual machine creates a completely new set of local variables for the method
+			make the class immutable, by set the fields to be final (String is an example)
+		If multiple objects need the same set of shared resources to operate, make sure they request them in the same order
+
+2. thread scheduling
+	multi-threading is very useful for network programming, because there's a lot of dead time in servicing a web request, i.e., waiting for the data from the network
+	priority
+		Threads that interact with the user should get very high priorities so that perceived responsiveness will be very quick. 
+			On the other hand, threads that calculate in the background should get low priorities
+		Tasks that will complete quickly should have high priorities. 
+			Tasks that take a long time should have low priorities so that they won’t get in the way of other tasks
+		void setPriority(int)
+	preemption
+		All Java virtual machines are guaranteed to use preemptive thread scheduling between priorities
+			a running low-prority thread will sooner or later give up control of the CPU to higher priority thread
+			with the same priority, a thread will be stopped after some time to let others run on CPU
+		Just because the starvation problem doesn’t arise on your machine 
+			doesn’t mean it won’t arise on your customers’ machines if their VMs use cooperative thread scheduling
+			some special-purpose Java VMs such as for embedded environments, are maybe cooperative scheduling
+		There are 10 ways a thread can pause in favor of other threads or indicate that it is ready to pause
+			It can block on I/O.
+				most common way for a thread to give up CPU in a network program
+			It can block on a synchronized object.
+			It can yield.
+				Yielding does not release any locks the thread holds. 
+					Therefore, ideally, a thread should not be synchronized on anything when it yields
+				If each iteration of the loop takes a significant amount of time, you may want to intersperse more calls to Thread.yield() in the rest of the code
+			It can go to sleep.
+				sleeping also does not release any locks the thread holds,
+					so try to avoid sleeping threads inside a synchronized method or block
+				calling the sleeping thread's interrupt() method will wake the thread up
+					which the sleeping thread experiences as an InterruptedException. 
+					From that point forward, the thread is awake and executes as normal, from the catch block on 
+			It can join another thread.
+				t.join()			// wait forever until t is done
+				t.join(long milliseconds)	// wait for some time and then continue regradlessly
+				join the thread does not mean start it!
+					you should start it and then join it
+				the joined thread, i.e., the one calls t.join(), will be interrupted when its interrupt() method is called
+					it will catch an InterruptedException, and then not waiting for the joining thread any more
+				many designs that used to require join() can now more easily be implemented using an Executor and a Future instead
+			It can wait on an object.
+				it's about lock
+				a waiting thread remains asleep until
+					The timeout expires.		// for the first two, if it cannot gain the lock it wants, it will be waiting again soon
+					The thread is interrupted.
+					The object is notified		// notify() selects one thread more or less at random from the list
+									// notifyAll()
+				synchronized(o){			// must be synchronized 
+					try{
+						o.wait();
+						// do things to o
+					}catch(InterruptedException e){
+					}
+				}
+				somewhere else, when o is available, o.notifyAll()
+				you can also use Lock and Condition to implement this
+			It can finish.
+				i.e., the run() method returns
+			It can be preempted by a higher-priority thread.
+			It can be suspended.	//deprecated
+			It can stop.		//deprecated
+		Inspect every run() method you write to make sure that one of these conditions will occur with reasonable frequency
+
+3. thread pools and executors
+	two many threads will waste resources, and switching among threads also carries overhead
+	actually, ExecutorService.submit() is an extension of ExecytorService.execute(), returning a Future for more infomation
+		if you don't need any results, either one is alright to use
+
+4. java.net.InetAddress
+	Java’s high-level representation of an IP address, both IPv4 and IPv6
+		Usually, it includes both a hostname and an IP address
+	create InetAddress object
+		no public constructor, but some static factory methods
+		getByName("")
+			can either be hostname or ip address
+			try {
+			      InetAddress address = InetAddress.getByName("www.oreilly.com");	
+						// makes a connection to the local DNS server to look up the name and the numeric address
+						// getByName("208.201.1.1")
+			} catch (UnknownHostException ex) {
+			      System.out.println("Could not find www.oreilly.com");
+			}
+		getAllByName("")
+			sometimes a host may have more than one addresses
+			returns String[]
+		getLocalHost()
+			returns an InetAddress object of the local machine
+			if faisls to connect to DNS to get it, returns the loopback address, which is hostname “localhost” and the dotted quad address “127.0.0.1”
+				If you’re not connected to the Internet, and the system does not have a fixed IP address or domain name
+		getByAddress(byte[] addr)
+		getByAddress(String hostname, byte[] addr)
+			make no guarantees that such a host exists or that the hostname is correctly mapped to the IP address
+				getByName("") using ip addresses also make no guarantees
+				objects can be created from any ip address
+			note that they throw an UnknownHostException if a byte array of an illegal size (neither 4 nor 16 bytes long) is passed as the address argument
+				byte[] address = {107, 23, (byte) 216, (byte) 196};
+	caching
+		DNS lookups can be expensive, so InetAddress caches the results of lookups
+			next time you look up the same address or hostname, even if you create a new object, the result in the cache will be passed
+				maybe this is the reason InetAddress uses a factory creator
+		caching has an expire time
+			if the IP address changes within the expire time, there may be a problem
+			and if the negative expire time is too long, and the first lookup fails, then until the cache expires, you cannot get a successful lookup again
+			system properties 
+				networkaddress.cache.ttl		expire time
+				networkaddress.cache.negative.ttl	negative expire time
+		DNS servers also have caching
+			so it may take several hours for an IP address change to propagate across the Intenet
+			in the meantime, nknownHostException, NoRouteToHostException, and ConnectException may happen
+	security issues
+		Untrusted code is not allowed to perform arbitrary DNS lookups for third-party hosts
+			because arbitrary DNS lookups would open a covert channel by which a program could talk to third-party hosts
+				e.g. an applet requests for "hello.baidu.com", then the local DNS server will look up for this hostname with no results,
+				then it will ask baidu.com's DNS server for it, in this way, cracker can look up the log of the DNS server and get the message "hello"
+		SecurityManager.checkConnect(String host, int port)
+			host can be hostname or ipv4 or ipv6
+			port == -1 checks whether DNS may be invoked to resolve the specified host
+			port > -1 checks whether a connection to the named host on the specified port is allowed	
+			
