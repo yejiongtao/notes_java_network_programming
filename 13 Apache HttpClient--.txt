@@ -1,0 +1,128 @@
+1. some concepts about connection management
+	connection persistance
+		establishing a connection is quite complex and involves nultiple packet exchanges, which can be quite time consuming
+		so it's good to reuse the connection
+		HttpClient fully supports connection persistence
+	HTTP connection routing and route computation
+		pass
+	
+2. HTTP connection managers
+	HttpClientConnectionManager interface
+		to serve as a factory for new HTTP connections, 
+		to manage life cycle of persistent connections 
+		to synchronize access to persistent connections making sure that only one thread can have access to a connection at a time.
+			HttpClientContext context = HttpClientContext.create();
+			HttpClientConnectionManager connMrg = new BasicHttpClientConnectionManager();
+			HttpRoute route = new HttpRoute(new HttpHost("localhost", 80));
+			// Request new connection. This can be a long process
+			ConnectionRequest connRequest = connMrg.requestConnection(route, null);
+			// Wait for connection up to 10 sec
+			HttpClientConnection conn = connRequest.get(10, TimeUnit.SECONDS);
+			try {
+			    // If not open
+			    if (!conn.isOpen()) {
+				// establish connection based on its route info
+				connMrg.connect(conn, route, 1000, context);
+				// and mark it as route complete
+				connMrg.routeComplete(conn, route, context);
+			    }
+			    // Do useful things with the connection.
+			} finally {
+			    connMrg.releaseConnection(conn, null, 1, TimeUnit.MINUTES);
+			}
+		The connection request can be terminated prematurely by calling ConnectionRequest#cancel() if necessary. 
+			This will unblock the thread blocked in the ConnectionRequest#get() method
+	
+	BasicHttpClientConnectionManager
+		maintains only one connection at a time
+		Even though this class is thread-safe it ought to be used by one execution thread only
+
+	PoolingHttpClientConnectionManager 
+		manages a pool of client connections 
+		is able to service connection requests from multiple execution threads
+		Connections are pooled on a per route basis
+			A request for a route for which the manager already has a persistent connection available in the pool will be serviced by leasing a connection from the pool rather than creating a brand new connection
+		by default this implementation will create no more than 2 concurrent connections per given route and no more 20 connections in total
+			but can be adjusted
+				PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+				// Increase max total connection to 200
+				cm.setMaxTotal(200);
+				// Increase default max connection per route to 20
+				cm.setDefaultMaxPerRoute(20);
+				// Increase max connections for localhost:80 to 50
+				HttpHost localhost = new HttpHost("locahost", 80);
+				cm.setMaxPerRoute(new HttpRoute(localhost), 50);
+
+				CloseableHttpClient httpClient = HttpClients.custom()
+					.setConnectionManager(cm)
+					.build();
+		When an HttpClient instance is no longer needed and is about to go out of scope it is important to shut down its connection manager 
+			to ensure that all connections kept alive by the manager get closed and system resources allocated by those connections are released.
+
+3. multithreaded request execution
+	When equipped with a pooling connection manager such as PoolingClientConnectionManager, HttpClient can be used to execute multiple requests simultaneously using multiple threads of execution
+	sample
+		PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+		CloseableHttpClient httpClient = HttpClients.custom()
+			.setConnectionManager(cm)
+			.build();
+
+		// URIs to perform GETs on
+		String[] urisToGet = {
+		    "http://www.domain1.com/",
+		    "http://www.domain2.com/",
+		    "http://www.domain3.com/",
+		    "http://www.domain4.com/"
+		};
+
+		// create a thread for each URI
+		GetThread[] threads = new GetThread[urisToGet.length];
+		for (int i = 0; i < threads.length; i++) {
+		    HttpGet httpget = new HttpGet(urisToGet[i]);
+		    threads[i] = new GetThread(httpClient, httpget);
+		}
+
+		// start the threads
+		for (int j = 0; j < threads.length; j++) {
+		    threads[j].start();
+		}
+
+		// join the threads
+		for (int j = 0; j < threads.length; j++) {
+		    threads[j].join();
+		}
+
+		static class GetThread extends Thread {
+
+		    private final CloseableHttpClient httpClient;
+		    private final HttpContext context;		// it's highly recommended for each thread to have its own HttpContext
+		    private final HttpGet httpget;
+
+		    public GetThread(CloseableHttpClient httpClient, HttpGet httpget) {
+			this.httpClient = httpClient;
+			this.context = HttpClientContext.create();
+			this.httpget = httpget;
+		    }
+
+		    @Override
+		    public void run() {
+			try {
+			    CloseableHttpResponse response = httpClient.execute(
+				    httpget, context);
+			    try {
+				HttpEntity entity = response.getEntity();
+			    } finally {
+				response.close();
+			    }
+			} catch (ClientProtocolException ex) {
+			    // Handle protocol errors
+			} catch (IOException ex) {
+			    // Handle I/O errors
+			}
+		    }
+		}
+
+4. 
+
+
+
