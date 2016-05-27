@@ -1,6 +1,59 @@
-1. 
+1. HTTP cookies
+	a token or short packet of state information that the HTTP agent and the target server can exchange to maintain a session
+		Cookies are set using the Set-Cookie HTTP header, sent in an HTTP response from the web server. 
+			This header instructs the web browser to store the cookie and send it back in future requests to the server (the browser will, of course, ignore this header if it does not support cookies or has disabled cookies).
+	create a cookie
+		BasicClientCookie cookie = new BasicClientCookie("name", "value");	// in its simplest form, an HTTP cookie is merely a name / value pair
+		// Set effective domain and path attributes
+		cookie.setDomain(".mycompany.com");
+		cookie.setPath("/");
+		// Set attributes exactly as sent by the server
+		cookie.setAttribute(ClientCookie.PATH_ATTR, "/");
+		cookie.setAttribute(ClientCookie.DOMAIN_ATTR, ".mycompany.com");
+	cookie specifications
+		to enforce:
+			rules of parsing Set-Cookie headers.
+			rules of validation of parsed cookies.
+			formatting of Cookie header for a given host, port and path of origin.		
+	choosing cookie policy
+		RequestConfig globalConfig = RequestConfig.custom()
+			.setCookieSpec(CookieSpecs.DEFAULT)
+			.build();
+		CloseableHttpClient httpclient = HttpClients.custom()
+			.setDefaultRequestConfig(globalConfig)
+			.build();
+		RequestConfig localConfig = RequestConfig.copy(globalConfig)
+			.setCookieSpec(CookieSpecs.STANDARD_STRICT)
+			.build();
+		HttpGet httpGet = new HttpGet("/");
+		httpGet.setConfig(localConfig);
+	custom cookie policy
+		pass
+	cookie persistence
+		you save cookies in a CookieStore
+		notice that cookies stored in an BasicClientCookie object are lost when the container object get garbage collected
+			// Create a local instance of cookie store
+			CookieStore cookieStore = new BasicCookieStore();
+			// Populate cookies if needed
+			BasicClientCookie cookie = new BasicClientCookie("name", "value");
+			cookie.setDomain(".mycompany.com");
+			cookie.setPath("/");
+			cookieStore.addCookie(cookie);
+			// Set the store
+			CloseableHttpClient httpclient = HttpClients.custom()
+				.setDefaultCookieStore(cookieStore)
+				.build();
+	HTTP state management and execution context
+		you add state management related objects to the execution context
+			Lookup instance 
+				representing the actual cookie specification registry. The value of this attribute set in the local context takes precedence over the default one.
+			CookieSpec instance 
+				representing the actual cookie specification.
+			CookieOrigin instance 
+				representing the actual details of the origin server.
+			CookieStore instance 
+				representing the actual cookie store. The value of this attribute set in the local context takes precedence over the default one.
 
-
-
-
+2. HTTP authentication
+	
 
