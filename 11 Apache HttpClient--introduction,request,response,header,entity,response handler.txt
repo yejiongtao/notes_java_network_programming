@@ -1,4 +1,4 @@
-1. introduction
+ 1. introduction
 	provides an efficient, up-to-date, and feature-rich package implementing the client side of the most recent HTTP standards and recommendations
 	HttpClient may be of interest to anyone building HTTP-aware client applications such as web browsers, web service clients, 
 		or systems that leverage or extend the HTTP protocol for distributed communication
@@ -17,7 +17,7 @@
 		uri
 			you can directly specify a URI
 				HttpGet httpget = new HttpGet("http://www.google.com/search?hl=en&q=httpclient&btnG=Google+Search&aq=f&oq=");
-			or use BUIBuilder to create a URI
+			or use URIBuilder to create a URI
 				URI uri = new URIBuilder()
 					.setScheme("http")
 					.setHost("www.google.com")
@@ -49,7 +49,7 @@
 			while (it.hasNext()) {
 			    System.out.println(it.next());
 			}
-		HeaderElementIterator, to parse the message into individual deader elements
+		HeaderElementIterator, to parse the message into individual header elements
 			HeaderElementIterator it = new BasicHeaderElementIterator(
 			    response.headerIterator("Set-Cookie"));
 

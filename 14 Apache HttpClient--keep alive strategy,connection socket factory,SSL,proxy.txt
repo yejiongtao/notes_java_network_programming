@@ -1,0 +1,154 @@
+1. connection keep alive strategy
+	The HTTP specification does not specify how long a persistent connection may be and should be kept alive
+		Some HTTP servers use a non-standard Keep-Alive header to communicate to the client the period of time in seconds they intend to keep the connection alive on the server side
+	HttpClient makes use of this information if available. 
+		If the Keep-Alive header is not present in the response, HttpClient assumes the connection can be kept alive indefinitely
+		however, it's not the common case for the server to keep the connection alive for a long time
+			so we may want to custom the keep alive strategy
+		sample code
+			ConnectionKeepAliveStrategy myStrategy = new ConnectionKeepAliveStrategy() {
+
+			    public long getKeepAliveDuration(HttpResponse response, HttpContext context) {
+				// Honor 'keep-alive' header
+				HeaderElementIterator it = new BasicHeaderElementIterator(
+					response.headerIterator(HTTP.CONN_KEEP_ALIVE));
+				while (it.hasNext()) {
+				    HeaderElement he = it.nextElement();
+				    String param = he.getName();
+				    String value = he.getValue();
+				    if (value != null && param.equalsIgnoreCase("timeout")) {
+					try {
+					    return Long.parseLong(value) * 1000;
+					} catch(NumberFormatException ignore) {
+					}
+				    }
+				}
+				HttpHost target = (HttpHost) context.getAttribute(
+					HttpClientContext.HTTP_TARGET_HOST);
+				if ("www.naughty-server.com".equalsIgnoreCase(target.getHostName())) {
+				    // Keep alive for 5 seconds only
+				    return 5 * 1000;
+				} else {
+				    // otherwise keep alive for 30 seconds
+				    return 30 * 1000;
+				}
+			    }
+
+			};
+			CloseableHttpClient client = HttpClients.custom()
+				.setKeepAliveStrategy(myStrategy)
+				.build();
+
+2. connection socket factories
+	HTTP connections make use of a java.net.Socket object internally to handle transmission of data across the wire
+		(a Socket refers to the connection)
+	ConnectionSocketFactory interface
+		to create, initialize and connect sockets
+		different types of ConnectionSocketFactory
+			PlainConnectionSocketFactory
+				default factory for creating and initializing plain (unencrypted) sockets
+			LayeredConnectionSocketFactory 
+				creating sockets layered over an existing plain socket. 
+				Socket layering is used primarily for creating secure sockets through proxies
+			SSLConnectionSocketFactory
+				implements SSL/TLS layering
+				fully reliant on standard Java Cryptography (JCE) and Secure Sockets (JSSE) extensions
+	sample code for creating a socket
+		HttpClientContext clientContext = HttpClientContext.create();
+		PlainConnectionSocketFactory sf = PlainConnectionSocketFactory.getSocketFactory();
+		Socket socket = sf.createSocket(clientContext);
+
+		int timeout = 1000; //ms
+		HttpHost target = new HttpHost("localhost");
+		InetSocketAddress remoteAddress = new InetSocketAddress(
+			InetAddress.getByAddress(new byte[] {127,0,0,1}), 80);
+		sf.connectSocket(timeout, socket, target, remoteAddress, null, clientContext);
+
+	integration with connection manager
+		socket factories can be associated with a particular protocol scheme as as HTTP or HTTPS and then used to create a custom connection manager
+		code
+			ConnectionSocketFactory plainsf = <...>
+			LayeredConnectionSocketFactory sslsf = <...>
+			Registry<ConnectionSocketFactory> r = RegistryBuilder.<ConnectionSocketFactory>create()		// generic method
+				.register("http", plainsf)
+				.register("https", sslsf)
+				.build();
+
+			HttpClientConnectionManager cm = new PoolingHttpClientConnectionManager(r);
+			HttpClients.custom()
+				.setConnectionManager(cm)
+				.build();
+	SSL/TLS customization
+		KeyStore myTrustStore = <...>
+		SSLContext sslContext = SSLContexts.custom()
+			.loadTrustMaterial(myTrustStore)
+			.build();
+		SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(sslContext);
+
+	hostname verification
+		In addition to the trust verification and the client authentication performed on the SSL/TLS protocol level,
+			HttpClient can optionally verify whether the target hostname matches the names stored inside the server's X.509 certificate, once the connection has been established
+		two kinds of HostnameVerifier 
+			HostnameVerifier 
+				The hostname must match any of alternative names specified by the certificate, or in case no alternative names are given the most specific CN of the certificate subject
+			NoopHostnameVerifier:  
+				essentially turns hostname verification off
+		code
+			SSLContext sslContext = SSLContexts.createSystemDefault();
+			SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(
+				sslContext,
+				NoopHostnameVerifier.INSTANCE);
+
+	!!! connect to those with unassigned or self-assigned SSL certificate
+		TrustStrategy acceptingTrustStrategy = new TrustStrategy() {	
+			@Override
+			public boolean isTrusted(X509Certificate[] arg0, String arg1) throws CertificateException {
+				return true;
+			}
+		};
+		SSLContext sslContext = SSLContexts.custom()
+				.loadTrustMaterial(acceptingTrustStrategy).build();
+		SSLConnectionSocketFactory sf = new SSLConnectionSocketFactory(
+				sslContext, NoopHostnameVerifier.INSTANCE);
+		Registry<ConnectionSocketFactory> r = RegistryBuilder
+				.<ConnectionSocketFactory>create()
+				.register("https", sf).build();
+		HttpClientConnectionManager cm = new PoolingHttpClientConnectionManager(r);
+		CloseableHttpClient client = HttpClients.custom().setConnectionManager(cm).build();
+		
+		HttpGet httpGet = new HttpGet("https://172.27.255.182/api/config/v1/notifications");
+		CloseableHttpResponse response = client.execute(httpGet);
+		System.out.println(response);
+
+3. HttpClient proxy configuration
+	supports only simple direct or one hop proxy connections out of the box
+	to connect to the target host via a proxy
+		HttpHost proxy = new HttpHost("someproxy", 8080);
+		DefaultProxyRoutePlanner routePlanner = new DefaultProxyRoutePlanner(proxy);
+		CloseableHttpClient httpclient = HttpClients.custom()
+			.setRoutePlanner(routePlanner)
+			.build();
+	to use the standard JRE proxy selector to obtain proxy info
+		SystemDefaultRoutePlanner routePlanner = new SystemDefaultRoutePlanner(
+			ProxySelector.getDefault());
+		CloseableHttpClient httpclient = HttpClients.custom()
+			.setRoutePlanner(routePlanner)
+			.build();
+	custom RoutePlanner to have a complete control over the process of HTTP route computation
+		HttpRoutePlanner routePlanner = new HttpRoutePlanner() {
+
+		    public HttpRoute determineRoute(
+			    HttpHost target,
+			    HttpRequest request,
+			    HttpContext context) throws HttpException {
+			return new HttpRoute(target, null,  new HttpHost("someproxy", 8080),
+				"https".equalsIgnoreCase(target.getSchemeName()));
+		    }
+
+		};
+		CloseableHttpClient httpclient = HttpClients.custom()
+			.setRoutePlanner(routePlanner)
+			.build();
+		    }
+		}		
+
